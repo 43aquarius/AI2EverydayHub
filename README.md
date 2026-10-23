@@ -7,10 +7,10 @@
 
 | 平台 | 代码目录（沙箱） | GitHub 仓库 | 内容与节奏 | 状态 |
 |------|------|------|------|------|
-| 小黑盒 | `/home/z/my-project/github-hot-heybox/` | [AI2HeyboxEveryday](https://github.com/43aquarius/AI2HeyboxEveryday) | AGI 日报 每日 09:30；GitHub 周榜 周一 10:00 | 运行中 |
+| 小黑盒 | `/home/z/my-project/github-hot-heybox/` | [AI2HeyboxEveryday](https://github.com/43aquarius/AI2HeyboxEveryday) | AGI 日报 每日 09:30；GitHub 周榜 周一 10:00；三大系列 隔天 12:10（技能/提示词/冷知识轮换） | 运行中 |
 | 微博 | `/home/z/my-project/weibo-agi-poster/` | [AI2WeiboEveryday](https://github.com/43aquarius/AI2WeiboEveryday) | 五栏目：早报 07:30 / 一言 12:00 / 萌宠 15:00 / 历史 18:30 / 热榜 21:30 | 运行中 |
 | 网易云音乐 | `/home/z/my-project/netease-music-poster/` | [AI2NeteaseEveryday](https://github.com/43aquarius/AI2NeteaseEveryday) | 每日一歌 08:00；评论自动回复 08–23 每 2h；周歌单 周日 19:30 | 运行中 |
-| 小红书 | `/home/z/my-project/xhs-draft-poster/` | [AI2XhsDraft](https://github.com/43aquarius/AI2XhsDraft) | 图文笔记 2~3 天一期（低频红线）；默认存草稿，发布需用户授权 | 运行中 |
+| 小红书 | `/home/z/my-project/xhs-draft-poster/` | [AI2XhsDraft](https://github.com/43aquarius/AI2XhsDraft) | 四条产品线轮换 1~2 天一期：工具种草 / 提示词收藏夹 / AI技能研究所 / AI技巧；默认存草稿，发布需用户授权 | 运行中 |
 | 时讯视频 | `/home/z/my-project/news-video-gen/` | [NewsVideoEveryday](https://github.com/43aquarius/NewsVideoEveryday) | AGI 时讯 1080p 视频（同小黑盒数据源）；手动/半自动 | 首期制作中 |
 
 各平台的**完整**交接文档（安装/凭据/发布流程/调度/防重/排雷/命令速查）在各自仓库 README，**接管任何一个平台前必读对应文档**。

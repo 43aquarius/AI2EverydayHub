@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""三平台统一自愈入口(2026-10-22 设计, 针对沙箱重启机制)
+"""三平台统一自愈入口(2026-10-22 设计, 2026-10-27 四层版+代理通道)
 
 沙箱重启机制(逆向结论, 详见各项目 README):
   - 重启会杀死全部后台进程
@@ -9,17 +9,25 @@
   - 项目外 /home/z/.secrets/ 不受该机制管辖 → 凭据持久层
 
 本脚本在重启后运行一次即可恢复:
-  1. 凭据自愈: 各平台 config.json 缺失时从 .secrets / secrets_backup.json 回写
+  1. 凭据自愈: 四层回退 config.json ← .secrets ← secrets_backup.json
+     ← GitHub AI2OpsVault(权威源, 需 .secrets/gh_pat.txt)
   2. 调度器复活: 检测三平台调度器进程(按 cwd 区分), 死了就拉起
-  3. 状态汇报: 各平台配置/进程/下次档期一览
+  3. 代理通道: y2a-proxy xray 存活检查(已部署才拉起, 不影响三平台)
+  4. 状态汇报: 各平台配置/进程/下次档期一览
+
+⚠ 平台目录是 my-project 单仓的子目录(非独立仓库), 严禁对其 git reset!
+   代码层恢复一律走 GitHub Contents API 逐文件叠加(见 restore_round4)。
 
 用法: python3 /home/z/my-project/scripts/boot_heal.py
+(已由平台 cron 每 2 小时自动唤醒执行, job 2903790)
 """
+import base64
 import json
 import os
 import subprocess
 import sys
 import time
+import urllib.request
 
 DETACHED = "/home/z/my-project/scripts/detached_run.py"
 SECRETS = "/home/z/.secrets"
@@ -34,7 +42,8 @@ PLATFORMS = [
                 '30s" >> scheduler.log; sleep 30; done'),
         "config": "config.json",
         "secrets_copy": f"{SECRETS}/heybox_config.json",
-        "note": "AGI日报 09:30 / 周榜周一 10:00",
+        "vault_key": "heybox",
+        "note": "AGI日报 09:30 / 周榜周一 10:00 / 系列隔天 12:10",
     },
     {
         "name": "微博矩阵",
@@ -45,6 +54,7 @@ PLATFORMS = [
                 '30s" >> scheduler.log; sleep 30; done'),
         "config": "config.json",
         "secrets_copy": f"{SECRETS}/weibo_config.json",
+        "vault_key": "weibo",
         "note": "五栏目 07:30/12:00/15:00/18:30/21:30",
     },
     {
@@ -56,9 +66,36 @@ PLATFORMS = [
                 '30s" >> daemon.log; sleep 30; done'),
         "config": "config.json",
         "secrets_copy": f"{SECRETS}/netease_config.json",
-        "note": "每日一歌 08:00 (凭据缺失时优雅等待)",
+        "vault_key": "netease",
+        "note": "每日一歌 08:00 / 每日歌单 20:00 (凭据缺失时优雅等待)",
     },
 ]
+
+XRAY = {
+    "dir": "/home/z/my-project/y2a-proxy",
+    "log": "xray.log",
+    "cmd": ["./bin/xray", "run", "-c", "config.json"],
+}
+
+
+def fetch_vault_platforms():
+    """第4层: GitHub AI2OpsVault 拉取各平台凭据(权威源)"""
+    pat_path = os.path.join(SECRETS, "gh_pat.txt")
+    if not os.path.exists(pat_path):
+        return None
+    try:
+        pat = open(pat_path).read().strip()
+        req = urllib.request.Request(
+            "https://api.github.com/repos/43aquarius/AI2OpsVault/"
+            "contents/vault.json",
+            headers={"Authorization": "Bearer " + pat,
+                     "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode())
+        vault = json.loads(base64.b64decode(d["content"]).decode())
+        return vault.get("platforms") or {}
+    except Exception:
+        return None
 
 
 def scheduler_alive(project_dir: str) -> int:
@@ -78,8 +115,8 @@ def scheduler_alive(project_dir: str) -> int:
     return 0
 
 
-def heal_config(pl: dict) -> str:
-    """凭据三层自愈: config.json ← .secrets ← secrets_backup.json"""
+def heal_config(pl: dict, vault_plats: dict = None) -> str:
+    """凭据四层自愈: config.json ← .secrets ← secrets_backup.json ← GitHub vault"""
     cfg_path = os.path.join(pl["dir"], pl["config"])
     if os.path.exists(cfg_path):
         return "OK"
@@ -97,7 +134,6 @@ def heal_config(pl: dict) -> str:
     bak = os.path.join(pl["dir"], "secrets_backup.json")
     if os.path.exists(bak):
         try:
-            import base64
             with open(bak, encoding="utf-8") as f:
                 data = json.load(f)
             cfg = json.loads(base64.b64decode(data["payload_b64"]))
@@ -110,7 +146,53 @@ def heal_config(pl: dict) -> str:
             return "已从 secrets_backup.json 自愈"
         except Exception as e:
             return f"backup 恢复失败: {e}"
+    # GitHub vault(第4层, 权威源)
+    vk = pl.get("vault_key")
+    if vault_plats and vk and vault_plats.get(vk):
+        try:
+            cfg = dict(vault_plats[vk])
+            key = "weibo_cookie" if vk == "weibo" else "cookie"
+            if not (cfg.get(key) or "").strip():
+                return "vault 该平台 cookie 为空"
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            os.makedirs(SECRETS, exist_ok=True)
+            with open(pl["secrets_copy"], "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            return "已从 GitHub vault 自愈(+secrets副本)"
+        except Exception as e:
+            return f"vault 恢复失败: {e}"
     return "缺失(需用户提供 cookie)"
+
+
+def xray_alive() -> int:
+    """主配置 xray 实例 PID(0=未运行, 不匹配 config_domain 变体)"""
+    try:
+        out = subprocess.run(["pgrep", "-f", "xray run -c config.json"],
+                             capture_output=True, text=True, timeout=10)
+        pids = (out.stdout or "").split()
+        return int(pids[0]) if pids else 0
+    except Exception:
+        return 0
+
+
+def ensure_xray() -> str:
+    """vless 本地代理通道自愈: B站→YouTube 搬运走外网的入口
+    仅当 y2a-proxy 已部署时拉起, 不影响三平台主流程"""
+    bin_path = os.path.join(XRAY["dir"], "bin", "xray")
+    cfg = os.path.join(XRAY["dir"], "config.json")
+    if not (os.path.exists(bin_path) and os.path.exists(cfg)):
+        return "未部署(跑 y2a-proxy/setup_xray.sh 可重建, 不影响三平台)"
+    pid = xray_alive()
+    if pid:
+        return f"运行中 pid={pid}"
+    subprocess.run(
+        ["python3", DETACHED, XRAY["dir"],
+         os.path.join(XRAY["dir"], XRAY["log"]), *XRAY["cmd"]],
+        capture_output=True, timeout=30, check=False)
+    time.sleep(2)
+    pid = xray_alive()
+    return f"已拉起 pid={pid}" if pid else "拉起失败(看 y2a-proxy/xray.log)"
 
 
 def restart_scheduler(pl: dict) -> int:
@@ -127,9 +209,18 @@ def main():
     print("=" * 58)
     print("三平台自愈 ·", time.strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 58)
+    vault_plats = None
+    need_vault = any(
+        not os.path.exists(os.path.join(pl["dir"], pl["config"]))
+        and not os.path.exists(pl["secrets_copy"])
+        for pl in PLATFORMS)
+    if need_vault:
+        vault_plats = fetch_vault_platforms()
+        if vault_plats:
+            print("[vault] GitHub 凭据库已拉取(第4层可用)")
     all_ok = True
     for pl in PLATFORMS:
-        cfg_state = heal_config(pl)
+        cfg_state = heal_config(pl, vault_plats)
         pid = scheduler_alive(pl["dir"])
         status = f"运行中 pid={pid}" if pid else "未运行"
         if not pid:
@@ -139,6 +230,8 @@ def main():
             all_ok = False
         print(f"\n[{pl['name']}] {pl['note']}")
         print(f"  凭据: {cfg_state} | 调度器: {status}")
+    x_status = ensure_xray()
+    print(f"\n[代理通道] vless mixed 127.0.0.1:10808 → {x_status}")
     print("\n" + ("✅ 全部正常" if all_ok else
                   "⚠ 存在待办: 缺凭据的平台等用户提供 cookie 后自动接管, "
                   "或人工运行对应 rebuild 脚本"))

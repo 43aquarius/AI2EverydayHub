@@ -42,8 +42,8 @@ HEYBOX_DIR = "/home/z/my-project/github-hot-heybox"
 
 NETEASE_FILES = ["scheduler.py", "daily_post.py", "playlist_maker.py",
                  "netease_client.py", "config.py"]
-HEYBOX_FILES = ["series_maker.py", "copy_craft.py", "hotnews_post.py",
-                "summarizer.py"]
+HEYBOX_FILES = ["scheduler.py", "series_maker.py", "copy_craft.py",
+                "hotnews_post.py", "summarizer.py"]
 
 WEIBO_SLOTS = {"morning": (7, 30), "yiyan": (12, 0), "pet": (15, 0),
                "history": (18, 30), "hot": (21, 30)}
